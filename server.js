@@ -112,11 +112,21 @@ function createBot () {
     return
   }
 
+  let loggedIn = false
+
   bot.on('login', () => {
     serverLog('info', `Бот вошёл на сервер как ${BOT_CONFIG.username}`)
     botStatus = 'connected'
+    loggedIn = false
     io.emit('status', { status: botStatus })
     setTimeout(startViewerIfNeeded, 3000)
+    // Авторегистрация через nLogin
+    setTimeout(() => {
+      if (bot) {
+        serverLog('info', 'Попытка регистрации (/reg)...')
+        bot.chat('/reg BotBotBotBot BotBotBotBot')
+      }
+    }, 1500)
   })
 
   bot.on('health', () => { io.emit('stats', getBotData()) })
@@ -126,6 +136,33 @@ function createBot () {
     const text = message.toString()
     serverLog('chat', text)
     io.emit('chat', { message: text, timestamp: Date.now() })
+
+    // Автологин если аккаунт уже зарегистрирован
+    const lower = text.toLowerCase()
+    if (!loggedIn && (
+      lower.includes('already') ||
+      lower.includes('уже зарегистр') ||
+      lower.includes('logged in') ||
+      lower.includes('вошли') ||
+      lower.includes('login') && lower.includes('password')
+    )) {
+      setTimeout(() => {
+        if (bot) {
+          serverLog('info', 'Автологин (/login)...')
+          bot.chat('/login BotBotBotBot')
+        }
+      }, 500)
+    }
+    if (!loggedIn && (
+      lower.includes('successfully registered') ||
+      lower.includes('успешно зарегистр') ||
+      lower.includes('successfully logged') ||
+      lower.includes('успешно вошли') ||
+      lower.includes('добро пожаловать')
+    )) {
+      loggedIn = true
+      serverLog('info', 'Автологин выполнен успешно!')
+    }
   })
 
   bot.on('error', (err) => {

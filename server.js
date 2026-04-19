@@ -15,7 +15,6 @@ const BOT_CONFIG = {
   host: 'theworldland.aternos.me',
   port: 17417,
   username: 'myboted0',
-  version: '1.21.10',
   hideErrors: false,
   auth: 'offline'
 }
@@ -99,7 +98,7 @@ function startViewerIfNeeded () {
 }
 
 function createBot () {
-  serverLog('info', `Подключение к ${BOT_CONFIG.host}:${BOT_CONFIG.port} (v${BOT_CONFIG.version}) как ${BOT_CONFIG.username}...`)
+  serverLog('info', `Подключение к ${BOT_CONFIG.host}:${BOT_CONFIG.port} как ${BOT_CONFIG.username} (автоопределение версии)...`)
   botStatus = 'connecting'
   io.emit('status', { status: botStatus })
 

@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>theworldnbc — Minecraft Dashboard</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', sans-serif;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #16213e;
+      border-bottom: 2px solid #0f3460;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    header img {
+      width: 40px;
+      height: 40px;
+      image-rendering: pixelated;
+    }
+
+    header h1 {
+      font-size: 1.3rem;
+      color: #4ecca3;
+      letter-spacing: 1px;
+    }
+
+    #status-badge {
+      padding: 5px 14px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .status-connected    { background: #1a472a; color: #4ecca3; border: 1px solid #4ecca3; }
+    .status-connecting   { background: #3b2f00; color: #ffc107; border: 1px solid #ffc107; }
+    .status-disconnected { background: #3a0000; color: #ff6b6b; border: 1px solid #ff6b6b; }
+    .status-error        { background: #3a0000; color: #ff6b6b; border: 1px solid #ff6b6b; }
+    .status-kicked       { background: #3a0000; color: #ff6b6b; border: 1px solid #ff6b6b; }
+
+    .header-controls {
+      display: flex;
+      gap: 8px;
+      margin-left: auto;
+      align-items: center;
+    }
+
+    .btn-ctrl {
+      padding: 7px 16px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: bold;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.2s, transform 0.1s;
+      letter-spacing: 0.5px;
+    }
+
+    .btn-ctrl:active { transform: scale(0.96); }
+    .btn-ctrl:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-start   { background: #4ecca3; color: #0d1b2a; }
+    .btn-restart { background: #0f3460; color: #fff; border: 1px solid #4ecca3; }
+    .btn-logs    { background: #1a1a3e; color: #aaa; border: 1px solid #333; }
+    .btn-start:hover:not(:disabled)   { background: #38b2a0; }
+    .btn-restart:hover:not(:disabled) { background: #1a4a7a; }
+    .btn-logs:hover   { background: #2a2a5a; color: #fff; }
+    .btn-logs.active  { background: #2a1a5e; color: #b39dff; border-color: #7c5cfc; }
+
+    /* Log panel */
+    #log-panel {
+      display: none;
+      position: fixed;
+      top: 0; right: 0; bottom: 0;
+      width: 420px;
+      background: #0a0f1e;
+      border-left: 2px solid #0f3460;
+      z-index: 1000;
+      flex-direction: column;
+      box-shadow: -4px 0 24px #000a;
+    }
+
+    #log-panel.open { display: flex; }
+
+    #log-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: #16213e;
+      border-bottom: 1px solid #0f3460;
+      flex-shrink: 0;
+    }
+
+    #log-panel-header span {
+      font-size: 0.88rem;
+      color: #4ecca3;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    #log-close {
+      background: none;
+      border: none;
+      color: #aaa;
+      font-size: 1.2rem;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    #log-close:hover { background: #1a1a3e; color: #fff; }
+
+    #log-clear {
+      background: #1a1a3e;
+      border: 1px solid #333;
+      color: #aaa;
+      font-size: 0.75rem;
+      cursor: pointer;
+      padding: 4px 10px;
+      border-radius: 4px;
+    }
+
+    #log-clear:hover { background: #2a1a3e; color: #fff; }
+
+    #log-output {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 12px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.75rem;
+      line-height: 1.6;
+    }
+
+    .log-line { display: flex; gap: 8px; padding: 2px 0; border-bottom: 1px solid #ffffff06; }
+    .log-time { color: #444; flex-shrink: 0; }
+    .log-text { word-break: break-word; }
+    .log-info  .log-text { color: #ccc; }
+    .log-error .log-text { color: #ff6b6b; }
+    .log-warn  .log-text { color: #ffc107; }
+    .log-chat  .log-text { color: #4ecca3; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      grid-template-rows: auto auto;
+      gap: 18px;
+      padding: 18px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .panel {
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 10px;
+      padding: 18px;
+    }
+
+    .panel h2 {
+      font-size: 0.9rem;
+      color: #4ecca3;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid #0f3460;
+      padding-bottom: 8px;
+    }
+
+    /* Stats */
+    .stat-row {
+      margin-bottom: 14px;
+    }
+
+    .stat-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      margin-bottom: 5px;
+      color: #aaa;
+    }
+
+    .stat-label span:last-child {
+      color: #fff;
+      font-weight: bold;
+    }
+
+    .bar-track {
+      height: 14px;
+      background: #0d1b2a;
+      border-radius: 7px;
+      overflow: hidden;
+      border: 1px solid #0f3460;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 7px;
+      transition: width 0.4s ease;
+    }
+
+    .bar-health { background: linear-gradient(90deg, #c0392b, #e74c3c); }
+    .bar-food   { background: linear-gradient(90deg, #b8600a, #e67e22); }
+
+    .position-box {
+      background: #0d1b2a;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 0.82rem;
+      color: #4ecca3;
+      font-family: monospace;
+      margin-top: 8px;
+    }
+
+    /* Inventory */
+    .inventory-grid {
+      display: grid;
+      grid-template-columns: repeat(9, 1fr);
+      gap: 4px;
+    }
+
+    .inv-slot {
+      aspect-ratio: 1;
+      background: #0d1b2a;
+      border: 1px solid #0f3460;
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.6rem;
+      color: #888;
+      padding: 3px;
+      cursor: default;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+
+    .inv-slot.filled {
+      border-color: #4ecca3;
+      color: #e0e0e0;
+    }
+
+    .inv-slot .item-name {
+      font-size: 0.55rem;
+      text-align: center;
+      line-height: 1.2;
+      word-break: break-word;
+      color: #ccc;
+    }
+
+    .inv-slot .item-count {
+      position: absolute;
+      bottom: 2px;
+      right: 3px;
+      font-size: 0.6rem;
+      font-weight: bold;
+      color: #fff;
+      text-shadow: 1px 1px 0 #000;
+    }
+
+    .inv-slot:hover .tooltip {
+      display: block;
+    }
+
+    .tooltip {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 4px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #000c;
+      color: #fff;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      white-space: nowrap;
+      z-index: 10;
+      pointer-events: none;
+      border: 1px solid #4ecca3;
+    }
+
+    /* Viewer */
+    .viewer-panel {
+      grid-column: 2;
+      grid-row: 1 / 3;
+    }
+
+    #viewer-frame {
+      width: 100%;
+      height: 460px;
+      border: none;
+      border-radius: 6px;
+      background: #0d1b2a;
+    }
+
+    .viewer-loading {
+      width: 100%;
+      height: 460px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #555;
+      font-size: 0.9rem;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid #0f3460;
+      border-top-color: #4ecca3;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Chat */
+    .chat-panel {
+      grid-column: 1;
+    }
+
+    #chat-log {
+      height: 160px;
+      overflow-y: auto;
+      background: #0d1b2a;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 0.82rem;
+      line-height: 1.5;
+      margin-bottom: 10px;
+      border: 1px solid #0f3460;
+    }
+
+    #chat-log .msg {
+      padding: 2px 0;
+      border-bottom: 1px solid #0f346022;
+      word-break: break-word;
+    }
+
+    #chat-log .msg:last-child { border: none; }
+
+    .chat-input-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    #chat-input {
+      flex: 1;
+      background: #0d1b2a;
+      border: 1px solid #0f3460;
+      border-radius: 6px;
+      padding: 9px 12px;
+      color: #e0e0e0;
+      font-size: 0.88rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    #chat-input:focus { border-color: #4ecca3; }
+
+    #chat-send {
+      background: #4ecca3;
+      color: #0d1b2a;
+      border: none;
+      border-radius: 6px;
+      padding: 9px 18px;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 0.88rem;
+      transition: background 0.2s;
+    }
+
+    #chat-send:hover { background: #38b2a0; }
+    #chat-send:disabled { background: #1a4a3a; color: #555; cursor: not-allowed; }
+
+    /* Keep-alive notice */
+    .keepalive-note {
+      grid-column: 1 / -1;
+      text-align: center;
+      font-size: 0.75rem;
+      color: #555;
+      padding-top: 4px;
+    }
+
+    @media (max-width: 900px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+      .viewer-panel {
+        grid-column: 1;
+        grid-row: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div style="width:40px;height:40px;background:#4ecca322;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;">⛏</div>
+  <h1>theworldnbc · Dashboard</h1>
+  <div class="header-controls">
+    <button class="btn-ctrl btn-start" id="btn-start" title="Подключить бота к серверу">▶ Запустить</button>
+    <button class="btn-ctrl btn-restart" id="btn-restart" title="Перезапустить соединение бота">↺ Перезапустить</button>
+    <button class="btn-ctrl btn-logs" id="btn-logs" title="Показать логи сервера">📋 Логи</button>
+    <div id="status-badge" class="status-connecting">Подключение...</div>
+  </div>
+</header>
+
+<div class="grid">
+
+  <!-- Stats panel -->
+  <div class="panel" style="grid-column:1; grid-row:1;">
+    <h2>📊 Состояние игрока</h2>
+
+    <div class="stat-row">
+      <div class="stat-label">
+        <span>❤️ Здоровье</span>
+        <span id="hp-text">0 / 20</span>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill bar-health" id="hp-bar" style="width:0%"></div>
+      </div>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat-label">
+        <span>🍖 Голод</span>
+        <span id="food-text">0 / 20</span>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill bar-food" id="food-bar" style="width:0%"></div>
+      </div>
+    </div>
+
+    <div class="stat-label" style="margin-top:12px;">
+      <span>📍 Позиция</span>
+    </div>
+    <div class="position-box" id="position">Нет данных</div>
+  </div>
+
+  <!-- Viewer panel -->
+  <div class="panel viewer-panel">
+    <h2>🎮 Вид от первого лица</h2>
+    <div id="viewer-container">
+      <div class="viewer-loading" id="viewer-loading">
+        <div class="spinner"></div>
+        <span>Ожидание подключения бота...</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Inventory panel -->
+  <div class="panel" style="grid-column:1; grid-row:2;">
+    <h2>🎒 Инвентарь</h2>
+    <div class="inventory-grid" id="inventory-grid">
+      <!-- filled by JS -->
+    </div>
+  </div>
+
+  <!-- Chat panel (below inventory) -->
+  <div class="panel chat-panel" style="grid-column:1; grid-row:3;">
+    <h2>💬 Чат</h2>
+    <div id="chat-log"><div class="msg" style="color:#555;">История чата появится здесь...</div></div>
+    <div class="chat-input-row">
+      <input id="chat-input" type="text" placeholder="Напишите сообщение от имени бота..." maxlength="256" disabled />
+      <button id="chat-send" disabled>Отправить</button>
+    </div>
+  </div>
+
+  <div class="keepalive-note">Keep-alive активен · обновление каждые 2 мин</div>
+</div>
+
+<!-- Log Panel -->
+<div id="log-panel">
+  <div id="log-panel-header">
+    <span>📋 Логи сервера</span>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button id="log-clear">Очистить</button>
+      <button id="log-close">✕</button>
+    </div>
+  </div>
+  <div id="log-output"></div>
+</div>
+
+<script>
+  const socket = io()
+  let viewerLoaded = false
+
+  const statusBadge = document.getElementById('status-badge')
+  const hpBar = document.getElementById('hp-bar')
+  const hpText = document.getElementById('hp-text')
+  const foodBar = document.getElementById('food-bar')
+  const foodText = document.getElementById('food-text')
+  const posEl = document.getElementById('position')
+  const chatLog = document.getElementById('chat-log')
+  const chatInput = document.getElementById('chat-input')
+  const chatSend = document.getElementById('chat-send')
+  const invGrid = document.getElementById('inventory-grid')
+  const viewerContainer = document.getElementById('viewer-container')
+  const viewerLoading = document.getElementById('viewer-loading')
+
+  function setStatus (status) {
+    const labels = {
+      connected: 'Подключён',
+      connecting: 'Подключение...',
+      disconnected: 'Отключён',
+      error: 'Ошибка',
+      kicked: 'Кикнут'
+    }
+    statusBadge.textContent = labels[status] || status
+    statusBadge.className = 'status-' + status
+    const isConnected = status === 'connected'
+    chatInput.disabled = !isConnected
+    chatSend.disabled = !isConnected
+  }
+
+  function updateStats (data) {
+    if (!data) return
+    const hp = Math.max(0, Math.min(20, data.health || 0))
+    const food = Math.max(0, Math.min(20, data.food || 0))
+    hpBar.style.width = (hp / 20 * 100) + '%'
+    hpText.textContent = hp.toFixed(1) + ' / 20'
+    foodBar.style.width = (food / 20 * 100) + '%'
+    foodText.textContent = food.toFixed(0) + ' / 20'
+
+    if (data.position) {
+      posEl.textContent = `X: ${data.position.x}  Y: ${data.position.y}  Z: ${data.position.z}`
+    }
+
+    renderInventory(data.inventory || [])
+  }
+
+  function renderInventory (items) {
+    invGrid.innerHTML = ''
+    const slots = {}
+    items.forEach(item => { slots[item.slot] = item })
+
+    for (let i = 0; i < 36; i++) {
+      const slot = document.createElement('div')
+      slot.className = 'inv-slot'
+      const item = slots[i] || slots[i + 9] || null
+      const found = items.find(it => it.slot === i)
+      if (found) {
+        slot.classList.add('filled')
+        const name = document.createElement('div')
+        name.className = 'item-name'
+        name.textContent = found.displayName || found.name
+        slot.appendChild(name)
+        if (found.count > 1) {
+          const count = document.createElement('div')
+          count.className = 'item-count'
+          count.textContent = found.count
+          slot.appendChild(count)
+        }
+        const tip = document.createElement('div')
+        tip.className = 'tooltip'
+        tip.textContent = (found.displayName || found.name) + ' ×' + found.count
+        slot.appendChild(tip)
+      }
+      invGrid.appendChild(slot)
+    }
+  }
+
+  function addChatMessage (text) {
+    const empty = chatLog.querySelector('[style*="color:#555"]')
+    if (empty) empty.remove()
+    const msg = document.createElement('div')
+    msg.className = 'msg'
+    msg.textContent = text
+    chatLog.appendChild(msg)
+    if (chatLog.children.length > 80) {
+      chatLog.removeChild(chatLog.firstChild)
+    }
+    chatLog.scrollTop = chatLog.scrollHeight
+  }
+
+  function loadViewer () {
+    if (viewerLoaded) return
+    fetch('/api/viewer-url')
+      .then(r => r.json())
+      .then(data => {
+        if (!data.url) return
+        viewerLoading.innerHTML = ''
+        const frame = document.createElement('iframe')
+        frame.id = 'viewer-frame'
+        frame.src = data.url
+        frame.allow = 'fullscreen'
+        viewerContainer.innerHTML = ''
+        viewerContainer.appendChild(frame)
+        viewerLoaded = true
+      })
+      .catch(() => {})
+  }
+
+  socket.on('status', ({ status }) => {
+    setStatus(status)
+    if (status === 'connected') {
+      setTimeout(loadViewer, 5000)
+    }
+    if (status !== 'connected') {
+      viewerLoaded = false
+      viewerContainer.innerHTML = ''
+      const loading = document.createElement('div')
+      loading.className = 'viewer-loading'
+      loading.id = 'viewer-loading'
+      loading.innerHTML = '<div class="spinner"></div><span>Ожидание подключения бота...</span>'
+      viewerContainer.appendChild(loading)
+    }
+  })
+
+  socket.on('stats', updateStats)
+
+  socket.on('chat', ({ message }) => {
+    addChatMessage(message)
+  })
+
+  socket.on('chat_error', ({ error }) => {
+    addChatMessage('[Ошибка] ' + error)
+  })
+
+  function sendChat () {
+    const msg = chatInput.value.trim()
+    if (!msg) return
+    socket.emit('chat', { message: msg })
+    chatInput.value = ''
+  }
+
+  chatSend.addEventListener('click', sendChat)
+  chatInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') sendChat()
+  })
+
+  const btnStart = document.getElementById('btn-start')
+  const btnRestart = document.getElementById('btn-restart')
+
+  function triggerReconnect () {
+    btnStart.disabled = true
+    btnRestart.disabled = true
+    socket.emit('restart')
+    setTimeout(() => {
+      btnStart.disabled = false
+      btnRestart.disabled = false
+    }, 4000)
+  }
+
+  btnStart.addEventListener('click', triggerReconnect)
+  btnRestart.addEventListener('click', triggerReconnect)
+
+  // Log panel
+  const btnLogs = document.getElementById('btn-logs')
+  const logPanel = document.getElementById('log-panel')
+  const logOutput = document.getElementById('log-output')
+  const logClose = document.getElementById('log-close')
+  const logClear = document.getElementById('log-clear')
+
+  function appendLog (entry) {
+    const line = document.createElement('div')
+    line.className = `log-line log-${entry.level}`
+    line.innerHTML = `<span class="log-time">${entry.time}</span><span class="log-text">${escapeHtml(entry.text)}</span>`
+    logOutput.appendChild(line)
+    if (logOutput.children.length > 300) logOutput.removeChild(logOutput.firstChild)
+    logOutput.scrollTop = logOutput.scrollHeight
+  }
+
+  function escapeHtml (str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  }
+
+  btnLogs.addEventListener('click', () => {
+    const open = logPanel.classList.toggle('open')
+    btnLogs.classList.toggle('active', open)
+  })
+
+  logClose.addEventListener('click', () => {
+    logPanel.classList.remove('open')
+    btnLogs.classList.remove('active')
+  })
+
+  logClear.addEventListener('click', () => {
+    logOutput.innerHTML = ''
+  })
+
+  socket.on('log', (entry) => {
+    appendLog(entry)
+  })
+
+  socket.on('log_history', (entries) => {
+    logOutput.innerHTML = ''
+    entries.forEach(appendLog)
+  })
+
+  // Keep-alive: ping every 2 minutes
+  setInterval(() => {
+    fetch('/ping').catch(() => {})
+  }, 120000)
+
+  // Initial load
+  fetch('/api/status')
+    .then(r => r.json())
+    .then(data => {
+      setStatus(data.status)
+      updateStats(data)
+      if (data.status === 'connected') {
+        setTimeout(loadViewer, 5000)
+      }
+    })
+    .catch(() => {})
+</script>
+</body>
+</html>

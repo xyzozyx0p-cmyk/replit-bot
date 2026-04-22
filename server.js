@@ -37,6 +37,8 @@ let bot = null
 const VIEWER_PORT = 3000
 let viewerStarted = false
 let botStatus = 'disconnected'
+const SERVER_START_TIME = Date.now()
+let botConnectedTime = null
 let reconnectTimer = null
 
 function getBotData () {
@@ -141,6 +143,7 @@ function createBot () {
   bot.on('login', () => {
     serverLog('info', `Бот вошёл на сервер как ${BOT_CONFIG.username}`)
     botStatus = 'connected'
+    botConnectedTime = Date.now()
     loggedIn = false
     io.emit('status', { status: botStatus })
     setTimeout(startViewerIfNeeded, 3000)
@@ -204,12 +207,14 @@ function createBot () {
     if (antiAfkTimer) { clearInterval(antiAfkTimer); antiAfkTimer = null }
     serverLog('warn', 'Бот отключён: ' + reason)
     botStatus = 'disconnected'
+    botConnectedTime = null
     io.emit('status', { status: botStatus })
     scheduleReconnect()
   })
 
   bot.on('kicked', (reason) => {
     if (antiAfkTimer) { clearInterval(antiAfkTimer); antiAfkTimer = null }
+    botConnectedTime = null
     const reasonStr = typeof reason === 'object' ? JSON.stringify(reason) : String(reason)
     serverLog('warn', 'Бот кикнут: ' + reasonStr)
     botStatus = 'kicked'
@@ -278,6 +283,14 @@ app.post('/api/restart', (req, res) => {
 app.get('/api/logs', (req, res) => { res.json(logBuffer) })
 
 app.get('/ping', (req, res) => { res.json({ alive: true, timestamp: Date.now() }) })
+
+app.get('/api/uptime', (req, res) => {
+  res.json({
+    serverUptimeMs: Date.now() - SERVER_START_TIME,
+    botUptimeMs: botConnectedTime ? Date.now() - botConnectedTime : 0,
+    botConnected: botStatus === 'connected'
+  })
+})
 
 io.on('connection', (socket) => {
   serverLog('info', 'Браузер подключился к панели управления')

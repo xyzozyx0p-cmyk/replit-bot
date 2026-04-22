@@ -113,6 +113,30 @@ function createBot () {
   }
 
   let loggedIn = false
+  let antiAfkTimer = null
+
+  function startAntiAfk () {
+    if (antiAfkTimer) clearInterval(antiAfkTimer)
+    antiAfkTimer = setInterval(() => {
+      if (!bot || !bot.entity) return
+      try {
+        const yaw = (Math.random() - 0.5) * Math.PI * 2
+        const pitch = (Math.random() - 0.5) * 0.5
+        bot.look(yaw, pitch, false)
+        bot.swingArm('right')
+        const dirs = ['forward', 'back', 'left', 'right']
+        const dir = dirs[Math.floor(Math.random() * 4)]
+        bot.setControlState(dir, true)
+        setTimeout(() => { try { bot && bot.setControlState(dir, false) } catch (e) {} }, 400)
+        if (Math.random() < 0.3) {
+          bot.setControlState('jump', true)
+          setTimeout(() => { try { bot && bot.setControlState('jump', false) } catch (e) {} }, 200)
+        }
+      } catch (e) {
+        serverLog('warn', 'Anti-AFK: ' + e.message)
+      }
+    }, 25000)
+  }
 
   bot.on('login', () => {
     serverLog('info', `Бот вошёл на сервер как ${BOT_CONFIG.username}`)
@@ -127,6 +151,11 @@ function createBot () {
         bot.chat('/reg BotBotBotBot BotBotBotBot')
       }
     }, 1500)
+  })
+
+  bot.on('spawn', () => {
+    serverLog('info', 'Anti-AFK активирован (движение каждые 25 сек)')
+    setTimeout(startAntiAfk, 8000)
   })
 
   bot.on('health', () => { io.emit('stats', getBotData()) })
@@ -172,6 +201,7 @@ function createBot () {
   })
 
   bot.on('end', (reason) => {
+    if (antiAfkTimer) { clearInterval(antiAfkTimer); antiAfkTimer = null }
     serverLog('warn', 'Бот отключён: ' + reason)
     botStatus = 'disconnected'
     io.emit('status', { status: botStatus })
@@ -179,6 +209,7 @@ function createBot () {
   })
 
   bot.on('kicked', (reason) => {
+    if (antiAfkTimer) { clearInterval(antiAfkTimer); antiAfkTimer = null }
     const reasonStr = typeof reason === 'object' ? JSON.stringify(reason) : String(reason)
     serverLog('warn', 'Бот кикнут: ' + reasonStr)
     botStatus = 'kicked'

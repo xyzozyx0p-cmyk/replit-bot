@@ -147,13 +147,13 @@ function createBot () {
     loggedIn = false
     io.emit('status', { status: botStatus })
     setTimeout(startViewerIfNeeded, 3000)
-    // Авторегистрация через nLogin
+    // Авторегистрация через nLogin (только если не залогинились по /login)
     setTimeout(() => {
-      if (bot) {
+      if (bot && !loggedIn) {
         serverLog('info', 'Попытка регистрации (/reg)...')
         bot.chat('/reg BotBotBotBot BotBotBotBot')
       }
-    }, 1500)
+    }, 4000)
   })
 
   bot.on('spawn', () => {
